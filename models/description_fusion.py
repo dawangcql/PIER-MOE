@@ -1,3 +1,27 @@
+"""Description encoder for PIERMoE v3.
+
+Key difference vs. ``pier_moe_core.description_fusion``:
+
+The v1/v2 ``MultiDescriptionFusion`` fuses the MLLM description back into
+``audio_global`` / ``visual_global`` through a ``MaskedGatedFusion``. That
+"poisons" the polarity router downstream — it now sees physical descriptors
+like "speech is fast" that should NOT influence positive/negative/neutral
+routing.
+
+In v3 we strictly separate the two streams:
+
+  * The raw audio/visual globals stay PURE (no description injected).
+  * Description tokens are encoded into ``desc_audio`` / ``desc_visual``
+    embeddings independently, and downstream we feed them ONLY to the
+    Interaction Router (see ``EmotionGroupedMoE``).
+
+Description alignment losses (cosine between modality global and its
+description) are kept — they still supervise the desc_encoder and the
+projection from raw modality space to description space. They are returned
+in the ``aux_losses`` dict so the trainer can scale them with
+``--align_weight`` just like v2.
+"""
+
 from __future__ import annotations
 
 from typing import Optional, Tuple
@@ -8,89 +32,41 @@ from torch import nn
 from transformers import AutoModel
 
 
-def _resolve_torch_dtype(value):
-    if value in (None, "none"):
-        return None
-    if value == "float16":
-        return torch.float16
-    if value == "bfloat16":
-        return torch.bfloat16
-    if value == "float32":
-        return torch.float32
-    return value
-
-
-def _model_hidden_size(model: nn.Module) -> int:
-    config = getattr(model, "config", None)
-    for name in ("hidden_size", "d_model", "n_embd"):
-        value = getattr(config, name, None)
-        if value is not None:
-            return int(value)
-    raise AttributeError("Cannot infer hidden size from model.config.")
-
-
 def _pool_text_output(outputs, attention_mask: torch.Tensor) -> torch.Tensor:
     if hasattr(outputs, "pooler_output") and outputs.pooler_output is not None:
         return outputs.pooler_output
     hidden = outputs.last_hidden_state
-    if attention_mask is None:
-        return hidden[:, -1, :]
     lengths = attention_mask.long().sum(dim=1).clamp(min=1) - 1
-    batch = torch.arange(hidden.size(0), device=hidden.device)
-    return hidden[batch, lengths]
+    return hidden[torch.arange(hidden.size(0), device=hidden.device), lengths]
 
 
 class DescriptionTextEncoder(nn.Module):
-    """Frozen Baichuan encoder plus a trainable projection to ``desc_dim``."""
-
     def __init__(
         self,
         model_name: str,
         out_dim: int = 256,
+        freeze: bool = True,
         dropout: float = 0.1,
         hf_local_only: bool = True,
-        trust_remote_code: bool = True,
-        torch_dtype="auto",
-        shared_text_model: Optional[nn.Module] = None,
     ):
         super().__init__()
-        if shared_text_model is None:
-            kwargs = {
-                "local_files_only": hf_local_only,
-                "trust_remote_code": trust_remote_code,
-            }
-            torch_dtype = _resolve_torch_dtype(torch_dtype)
-            if torch_dtype is not None:
-                kwargs["torch_dtype"] = torch_dtype
-            self.text_model = AutoModel.from_pretrained(model_name, **kwargs)
-        else:
-            self.text_model = shared_text_model
-        for param in self.text_model.parameters():
-            param.requires_grad = False
-        self.text_model.eval()
-        hidden = _model_hidden_size(self.text_model)
-        self.proj = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(hidden, out_dim),
-            nn.ReLU(),
-        )
+        self.text_model = AutoModel.from_pretrained(model_name, local_files_only=hf_local_only)
+        self.freeze = freeze
+        if freeze:
+            for param in self.text_model.parameters():
+                param.requires_grad = False
+        hidden = self.text_model.config.hidden_size
+        self.proj = nn.Sequential(nn.Dropout(dropout), nn.Linear(hidden, out_dim), nn.ReLU())
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        self.text_model.eval()
-        with torch.no_grad():
-            outputs = self.text_model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                return_dict=True,
-            )
+        with torch.set_grad_enabled(not self.freeze):
+            outputs = self.text_model(input_ids=input_ids, attention_mask=attention_mask, return_dict=True)
             pooled = _pool_text_output(outputs, attention_mask)
-        return self.proj(pooled.float())
+        return self.proj(pooled)
 
 
 def _masked_cosine_align_loss(
-    raw_proj: torch.Tensor,
-    aux_feat: torch.Tensor,
-    valid_mask: torch.Tensor,
+    raw_proj: torch.Tensor, aux_feat: torch.Tensor, valid_mask: torch.Tensor
 ) -> torch.Tensor:
     valid_mask = valid_mask.float().view(-1)
     raw_proj = F.normalize(raw_proj, dim=-1)
@@ -100,27 +76,33 @@ def _masked_cosine_align_loss(
 
 
 class IndependentDescriptionEncoder(nn.Module):
+    """Encode audio / visual MLLM descriptions into independent embeddings.
+
+    Unlike ``MultiDescriptionFusion`` (v1/v2), this module:
+      * Does NOT receive ``audio_global`` / ``visual_global`` to gate-fuse.
+      * Returns ``desc_audio`` and ``desc_visual`` as independent tensors,
+        masked by their per-sample validity flag (zeros when invalid).
+      * Still emits alignment losses ``audio_align`` / ``visual_align`` so
+        the desc encoder stays supervised.
+    """
+
     def __init__(
         self,
         desc_model_name: str,
         audio_raw_dim: int,
         visual_raw_dim: int,
         desc_dim: int,
+        freeze_text_encoder: bool = True,
         dropout: float = 0.1,
         hf_local_only: bool = True,
-        trust_remote_code: bool = True,
-        torch_dtype="auto",
-        shared_text_model: Optional[nn.Module] = None,
     ):
         super().__init__()
         self.desc_encoder = DescriptionTextEncoder(
             model_name=desc_model_name,
             out_dim=desc_dim,
+            freeze=freeze_text_encoder,
             dropout=dropout,
             hf_local_only=hf_local_only,
-            trust_remote_code=trust_remote_code,
-            torch_dtype=torch_dtype,
-            shared_text_model=shared_text_model,
         )
         self.audio_align_proj = nn.Linear(audio_raw_dim, desc_dim)
         self.visual_align_proj = nn.Linear(visual_raw_dim, desc_dim)
@@ -162,14 +144,10 @@ class IndependentDescriptionEncoder(nn.Module):
 
         losses = {
             "audio_align": _masked_cosine_align_loss(
-                self.audio_align_proj(audio_raw_feat),
-                audio_desc_feat,
-                audio_desc_valid,
+                self.audio_align_proj(audio_raw_feat), audio_desc_feat, audio_desc_valid
             ),
             "visual_align": _masked_cosine_align_loss(
-                self.visual_align_proj(visual_raw_feat),
-                visual_desc_feat,
-                visual_desc_valid,
+                self.visual_align_proj(visual_raw_feat), visual_desc_feat, visual_desc_valid
             ),
             "visual_openface_align": zero,
         }
