@@ -2,15 +2,15 @@
 
 **Polarity-Interaction Expert Routing with Description Guidance for Multimodal Sentiment Analysis**
 
-Qinglin Chang, Yejing Xi, Lijian Gao, Xiaojun Shen, and Qirong Mao
-
-School of Computer Science and Communication Engineering, Jiangsu University
-
 This repository contains the current public implementation of **PIER-MoE**, a multimodal sentiment analysis framework that predicts sentiment polarity and intensity from text, speech, and visual behavior. PIER-MoE separates two questions in multimodal fusion: **what sentiment an utterance expresses** and **how its modalities contribute evidence**.
 
 > **Release status: partial code release.** The model components and selected supporting utilities are available now. The complete training and reproduction pipeline is not yet included. Additional training scripts and the full audio/video preprocessing code are planned for release after paper acceptance.
 
 ## Method overview
+
+![PIER-MoE architecture with modality encoders, description-guided interaction routing, polarity experts, a shared path, and attention-residual fusion](assets/figures/architecture.png)
+
+*Figure 1. Overall architecture of PIER-MoE. Audio and visual descriptions guide the interaction router, while the experts operate on modality representations.*
 
 PIER-MoE uses RoBERTa, WavLM, and CLIP representations for text, audio, and vision, respectively. Modality representations are projected into a common hidden space and pooled before expert routing. The released model consumes precomputed visual features; CLIP feature extraction is not included in this release.
 
@@ -50,6 +50,7 @@ Use the classes exported by **`models`** for the main description-guided archite
 
 ```text
 PIER-MOE/
+├── assets/figures/             # Paper figures displayed in this README
 ├── models/                    # Main description-guided PIER-MoE implementation
 ├── pier_moe_core/              # Shared model building blocks and variants
 ├── data/
@@ -120,6 +121,14 @@ The following results are from the submitted manuscript, averaged over five rand
 | CMU-MOSEI | 86.66 / 88.82 | 86.91 / 88.93 | 56.24 | 0.481 | 0.853 |
 
 Under the paper's comparison protocol, PIER-MoE achieves the best results on six of the seven reported measures on both datasets when Has-0 and Non-0 are counted separately, and ranks second on Acc-7. The ablations examine expert grouping, description placement, and attention-residual fusion.
+
+### Routing and interaction behavior
+
+![MOSI analysis of polarity gates, interaction gate mass under modality masking, and expert-output stability with and without interaction regularization](assets/figures/routing_interaction.png)
+
+*Figure 2. MOSI routing and masking analysis: (a) mean polarity gates by sentiment; (b) interaction-gate mass; (c) cosine similarity between full-input and masked expert outputs, with and without interaction regularization. LOI retains one modality, and LOO removes one modality.*
+
+The polarity router favors the expert matching each sentiment group. Under masking, UNQ receives more gate mass when only one modality is retained, while RED receives more when one modality is removed. Interaction regularization encourages distinct expert responses: UNQ is more stable under LOI, RED under LOO, and SYN is more sensitive to masking. These results support the intended interaction behaviors without establishing a formal information decomposition.
 
 ## Acknowledgments
 
