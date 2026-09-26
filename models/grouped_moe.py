@@ -1,34 +1,3 @@
-"""EmotionGroupedMoE with description-aware interaction routing.
-
-Two architectural changes vs. v2:
-
-  (1) Description routes ONLY to the Interaction Router (Section 4.2).
-      * Polarity Router & Polarity Experts see ``x_pure`` only.
-      * Shared Expert sees ``x_pure`` only.
-      * Interaction Router combines ``router_x(x_pure)`` with a separate
-        ``lambda * router_desc(projected_desc)`` logits branch;
-        Interaction Experts still operate on ``x_pure`` so the PID
-        masking semantics stay coherent (mask is over the modality
-        chunks of x_pure, not over the description).
-
-  (2) Uniqueness loss switched to ``nn.TripletMarginLoss``
-      (Section 4.3 Optimization 1).
-      * Anchor   = full UNQ expert output on x_pure.
-      * Positive = leave-only-in (LOI) outputs from the UNQ expert
-                   — these preserve single-modal information that UNQ
-                   should still encode.
-      * Negative = full SYN expert output on x_pure
-                   — SYN encodes complementary/joint info, which is
-                   semantically distinct from UNQ and provides a strong
-                   contrast pole.
-      The margin pushes the UNQ representation away from the SYN
-      representation in L2 space while pulling it toward LOI inputs,
-      which gives a much stronger gradient than ``1 - cos_sim``.
-
-By default the interface mirrors v2 and returns
-``(output, total_loss, raw_losses)``. When ``return_diagnostics=True``,
-it also returns router and fusion diagnostics for visualization.
-"""
 
 from __future__ import annotations
 

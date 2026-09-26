@@ -1,34 +1,3 @@
-"""PIERMoEForMER with independent description routing.
-
-Pipeline:
-
-    text_raw ─────────────────────────────────────→ text_global (pure)
-    audio_raw ────────────────────────────────────→ audio_global (pure)
-    visual_raw ───────────────────────────────────→ visual_global (pure)
-                                                    │
-                                          ┌─────────┴────────┐
-                                          ▼                  │
-                  audio_desc / visual_desc ──→ desc_audio   │
-                                              desc_visual    │
-                                                  │          │
-                                                  ▼          ▼
-                                            (only routes to
-                                            Interaction Router)
-                                                       │
-                                                       ▼
-                  EmotionGroupedMoE(x_pure, desc_features=desc_proj)
-                                                       │
-                                                       ▼
-                                       multimodal AttnRes fusion → MAE head
-
-Crucially, NO description signal flows into ``audio_global`` / ``visual_global``
-nor into the Polarity Router / Shared Expert. Descriptions only steer
-**which** interaction expert fires.
-
-This script inherits from ``PIERMoEForMER`` (v1) so the backbones, visual
-encoder, context AttnRes, multimodal AttnRes, and regression head stay
-identical. Only the description path and the global MoE are replaced.
-"""
 
 from __future__ import annotations
 

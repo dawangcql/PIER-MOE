@@ -1,0 +1,1 @@
+# Currently, only the code for extracting audio and video descriptions using a multimodal large model is shown. The full code for extracting audio and video from the dataset will be provided after the paper is accepted.

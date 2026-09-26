@@ -1,28 +1,3 @@
-"""Configuration for PIERMoE v3.
-
-v3 adds three knobs on top of PIERMoEConfig (v2):
-
-  * ``route_desc_to_interaction_only``
-        When True, the MLLM description embeddings are NOT fused back into
-        ``audio_global`` / ``visual_global``. Instead they are routed only
-        to the Interaction Router inside ``EmotionGroupedMoE``. This is
-        the core architectural change of this configuration.
-
-  * ``use_triplet_uniqueness`` / ``triplet_margin``
-        When True, replaces the ``1 - cos_sim(full_unq, loi)`` uniqueness
-        loss with an I2MoE-style ``TripletMarginLoss`` (Section 4.3
-        Optimization 1).
-
-  * ``desc_router_proj_dim``
-        Dimension to project each description embedding to BEFORE it is
-        fed to the Interaction Router. Default 64 is much smaller than
-        ``desc_dim`` (256) so the router input stays sane.
-
-Everything else is byte-identical to v2: same backbones, same datasets,
-same OpenFace / CLIP / RoBERTa-large / WavLM-large feature pipeline. The
-v3 trainer reuses the v2 data paths verbatim.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

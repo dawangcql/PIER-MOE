@@ -1,26 +1,3 @@
-"""
-EmotionGroupedMoE: a sentiment-specialized Mixture-of-Experts for MOSI/MOSEI.
-
-Design (PI-S MoE = Polarity + Interaction + Shared):
-
-  G1 - Polarity Experts (3): {pos, neg, neu}
-       Specialise on positive / negative / neutral subspaces.
-       Trained with a PAMoE-style Guide Task using the sample's label sign.
-
-  G2 - Interaction Experts (3): {uniqueness, synergy, redundancy}
-       Specialise on the three PID-style multimodal interaction patterns.
-       Trained with a weakly-supervised cosine loss using leave-only-in
-       (Unq) and leave-one-out (Syn / Red) modality masking.
-
-  Shared Expert (1): always-on residual path that does NOT depend on
-       routing, providing a stable fallback (DeepSeek / Pangu / DASE
-       inspiration).
-
-Final fusion:
-  out = alpha * Shared(x) + (1 - alpha) * (w_p * PolarityMix(x) + w_i * InteractionMix(x))
-
-with a learnable scalar alpha and a sample-conditioned softmax(w_p, w_i).
-"""
 
 from __future__ import annotations
 

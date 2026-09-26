@@ -1,0 +1,1 @@
+# Currently, only a portion of the training scripts and parameters on the MOSI dataset are shown; other scripts will be presented after the paper is accepted.

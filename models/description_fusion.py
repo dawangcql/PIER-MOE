@@ -1,26 +1,4 @@
-"""Description encoder for PIERMoE v3.
 
-Key difference vs. ``pier_moe_core.description_fusion``:
-
-The v1/v2 ``MultiDescriptionFusion`` fuses the MLLM description back into
-``audio_global`` / ``visual_global`` through a ``MaskedGatedFusion``. That
-"poisons" the polarity router downstream — it now sees physical descriptors
-like "speech is fast" that should NOT influence positive/negative/neutral
-routing.
-
-In v3 we strictly separate the two streams:
-
-  * The raw audio/visual globals stay PURE (no description injected).
-  * Description tokens are encoded into ``desc_audio`` / ``desc_visual``
-    embeddings independently, and downstream we feed them ONLY to the
-    Interaction Router (see ``EmotionGroupedMoE``).
-
-Description alignment losses (cosine between modality global and its
-description) are kept — they still supervise the desc_encoder and the
-projection from raw modality space to description space. They are returned
-in the ``aux_losses`` dict so the trainer can scale them with
-``--align_weight`` just like v2.
-"""
 
 from __future__ import annotations
 
